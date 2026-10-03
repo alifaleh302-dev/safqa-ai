@@ -46,6 +46,25 @@ Add this field to the JSON:
   "ignore" and "reply" to "".
 """
 
+BEHAVIOUR_RULES = """\
+
+Human behaviour rules (these override the operator persona when they conflict):
+- One reply per incoming message. Never send two variants of the same answer.
+- Do not answer every line. If the last message adds nothing new, or is just
+  "ok", "thanks", a laugh, a sticker, or filler, choose "ignore".
+- If the person tells you to stop, says they don't want you, or is insulting or
+  mocking, do NOT argue, do NOT apologise twice, and do NOT keep selling. Choose
+  "ignore" (or "escalate" if a human must follow up). Silence is the human
+  reaction, not another message.
+- If someone accuses you of being a bot, deflect ONCE, briefly and casually
+  (e.g. "هههه لا عادي، تفضل"), then continue with the actual topic. Never repeat
+  that you are human, never deny it more than once, and never mention AI,
+  models, or being automated.
+- Never mirror the client's exact words back, and never send two near-identical
+  sentences.
+- If the client is clearly only mocking and there is no real request, "ignore".
+"""
+
 
 @dataclass
 class Decision:
@@ -77,7 +96,7 @@ async def decide(
     # Inject the authoritative product catalogue for this query so the model
     # never has to rely on prices hand-written in the operator prompt.
     catalogue = kb.render_context(latest_text)
-    instruction = DECISION_INSTRUCTION
+    instruction = DECISION_INSTRUCTION + BEHAVIOUR_RULES
     if reply_scope != "all":
         instruction += RELEVANCE_RULE
     system = f"{instruction}\n\n=== OPERATOR RULES ===\n{system_prompt}"

@@ -142,11 +142,18 @@ async def connect_existing(account_id: int) -> str:
 
 async def _register(account_id: int, client: TelegramClient) -> None:
     """Attach the new-message handler and update account status."""
-    if account_id in _handlers:
+    # A client may already be live for this account (e.g. startup restore plus
+    # a manual reconnect). Two live clients would both receive the same update
+    # and both reply — which looks exactly like a bot. Drop the old one first.
+    _stop_supervisor(account_id)
+    old = _clients.pop(account_id, None)
+    if old is not None and old is not client:
+        old.remove_event_handler(_handlers.get(account_id, lambda *_: None))
         try:
-            client.remove_event_handler(_handlers[account_id])
-        except Exception:
+            await old.disconnect()
+        except Exception:  # noqa: BLE001 - best effort cleanup
             pass
+    _handlers.pop(account_id, None)
 
     async def on_new_message(event: events.NewMessage.Event) -> None:
         await _handle_incoming(account_id, event)
@@ -267,6 +274,33 @@ def _record_reply(account_id: int) -> None:
     _reply_log[account_id].append(datetime.now(timezone.utc))
 
 
+def _check_user_limit(group_id: int, sender_id: int, limit: int) -> bool:
+    """True if we may still reply to this person.
+
+    Counts inbound messages from the same Telegram user in this group that we
+    already answered within the last 24h. Capping this prevents us from looking
+    like an eager bot that answers every single line, and keeps the account safe
+    from spam reports.
+    """
+    if limit <= 0 or not sender_id:
+        return True
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    with SessionLocal() as db:
+        answered = (
+            db.query(models.Message.id)
+            .join(models.Decision, models.Decision.message_id == models.Message.id)
+            .filter(
+                models.Message.group_id == group_id,
+                models.Message.sender_id == sender_id,
+                models.Message.direction == "in",
+                models.Decision.action == "reply",
+                models.Message.created_at >= since,
+            )
+            .count()
+        )
+    return answered < limit
+
+
 async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> None:
     """Full pipeline: filter -> context -> decide -> humanize -> send -> log."""
     try:
@@ -287,14 +321,32 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
             system_text = prompt.system_text
             mode = group.mode
             reply_scope = group.reply_scope
+            per_user_limit = group.max_replies_per_user_per_day
+
+            # A second live client (or a redelivered update) would otherwise
+            # make us reply twice to the same message. Ignore duplicates.
+            if event.id:
+                already = (
+                    db.query(models.Message.id)
+                    .filter(
+                        models.Message.group_id == group_id,
+                        models.Message.telegram_message_id == event.id,
+                        models.Message.direction == "in",
+                    )
+                    .first()
+                )
+                if already is not None:
+                    return
 
             sender = await event.get_sender()
             sender_name = _display_name(sender)
+            sender_id = getattr(sender, "id", 0) or 0
 
             # Store inbound message (also broadcast to live monitor).
             inbound = models.Message(
                 group_id=group_id,
                 telegram_message_id=event.id,
+                sender_id=sender_id,
                 sender_name=sender_name,
                 direction="in",
                 text=text,
@@ -333,6 +385,21 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
         if not _check_rate_limit(account_id):
             _log_decision(group_id, inbound_id, "ignore", "", "rate limit reached")
             _log_event("warning", "guard", "Reply skipped: hourly/daily rate limit reached")
+            return
+
+        if not _check_user_limit(group_id, sender_id, per_user_limit):
+            _log_decision(
+                group_id,
+                inbound_id,
+                "ignore",
+                "",
+                f"per-user daily limit reached ({per_user_limit}/24h)",
+            )
+            _log_event(
+                "info",
+                "guard",
+                f"Reply skipped: {sender_name} already got {per_user_limit} replies in 24h",
+            )
             return
 
         try:
@@ -497,11 +564,13 @@ def _store_message(
     sender_name: str,
     direction: str,
     text: str,
+    sender_id: int = 0,
 ) -> None:
     with SessionLocal() as db:
         message = models.Message(
             group_id=group_id,
             telegram_message_id=telegram_message_id,
+            sender_id=sender_id,
             sender_name=sender_name,
             direction=direction,
             text=text,

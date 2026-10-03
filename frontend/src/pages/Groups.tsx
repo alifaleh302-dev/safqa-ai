@@ -16,6 +16,7 @@ export default function Groups({ notify }: Props) {
   const [promptId, setPromptId] = useState<number | "">("");
   const [mode, setMode] = useState<Group["mode"]>("mention");
   const [replyScope, setReplyScope] = useState<Group["reply_scope"]>("relevant");
+  const [perUserLimit, setPerUserLimit] = useState(2);
 
   async function load() {
     const [g, a, p] = await Promise.all([api.groups.list(), api.accounts.list(), api.prompts.list()]);
@@ -40,6 +41,7 @@ export default function Groups({ notify }: Props) {
         prompt_id: promptId === "" ? null : promptId,
         mode,
         reply_scope: replyScope,
+        max_replies_per_user_per_day: perUserLimit,
       });
       setTelegramId("");
       setTitle("");
@@ -118,6 +120,16 @@ export default function Groups({ notify }: Props) {
             <option value="relevant">ردّ ذو صلة فقط</option>
             <option value="all">ردّ على كل رسالة موجّهة</option>
           </select>
+          <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            حدّ الردود لكل شخص/24س
+            <input
+              type="number"
+              min={0}
+              style={{ width: 70 }}
+              value={perUserLimit}
+              onChange={(e) => setPerUserLimit(Number(e.target.value))}
+            />
+          </label>
           <button className="primary" onClick={create}>
             إضافة
           </button>
@@ -166,6 +178,16 @@ export default function Groups({ notify }: Props) {
               <option value="relevant">ذو صلة</option>
               <option value="all">الكل</option>
             </select>
+            <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              حدّ/شخص/24س
+              <input
+                type="number"
+                min={0}
+                style={{ width: 70 }}
+                value={g.max_replies_per_user_per_day}
+                onChange={(e) => update(g, { max_replies_per_user_per_day: Number(e.target.value) })}
+              />
+            </label>
           </div>
         </div>
       ))}

@@ -35,14 +35,28 @@ def _apply_light_migrations() -> None:
     instead of forcing a reset. Safe to run on every startup (idempotent).
     """
     inspector = inspect(engine)
-    if "groups" not in inspector.get_table_names():
-        return
-    columns = {col["name"] for col in inspector.get_columns("groups")}
-    if "reply_scope" not in columns:
+    tables = set(inspector.get_table_names())
+    if "groups" in tables:
+        columns = {col["name"] for col in inspector.get_columns("groups")}
         with engine.begin() as conn:
-            conn.execute(
-                text("ALTER TABLE groups ADD COLUMN reply_scope VARCHAR(16) DEFAULT 'relevant'")
-            )
+            if "reply_scope" not in columns:
+                conn.execute(
+                    text("ALTER TABLE groups ADD COLUMN reply_scope VARCHAR(16) DEFAULT 'relevant'")
+                )
+            if "max_replies_per_user_per_day" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE groups ADD COLUMN max_replies_per_user_per_day "
+                        "INTEGER DEFAULT 2"
+                    )
+                )
+    if "messages" in tables:
+        columns = {col["name"] for col in inspector.get_columns("messages")}
+        if "sender_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE messages ADD COLUMN sender_id BIGINT DEFAULT 0")
+                )
 
 
 def get_db():

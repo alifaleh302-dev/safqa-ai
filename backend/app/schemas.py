@@ -61,6 +61,7 @@ class GroupCreate(BaseModel):
     prompt_id: Optional[int] = None
     mode: str = "mention"
     reply_scope: str = "relevant"
+    max_replies_per_user_per_day: int = 2
 
 
 class GroupUpdate(BaseModel):
@@ -69,6 +70,7 @@ class GroupUpdate(BaseModel):
     prompt_id: Optional[int] = None
     mode: Optional[str] = None
     reply_scope: Optional[str] = None
+    max_replies_per_user_per_day: Optional[int] = None
     active: Optional[bool] = None
 
 
@@ -80,6 +82,7 @@ class GroupOut(ORMModel):
     prompt_id: Optional[int]
     mode: str
     reply_scope: str
+    max_replies_per_user_per_day: int
     active: bool
     created_at: datetime
 

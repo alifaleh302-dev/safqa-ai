@@ -58,6 +58,9 @@ class Group(Base):
     # "relevant": only answer messages about our offer; "all": answer anything
     # addressed to us. Kept separate from `mode` (which decides *when* to look).
     reply_scope: Mapped[str] = mapped_column(String(16), default="relevant")
+    # Anti-spam / anti-detection: max replies to the SAME person per 24h.
+    # 0 means unlimited.
+    max_replies_per_user_per_day: Mapped[int] = mapped_column(Integer, default=2)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -73,6 +76,9 @@ class Message(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    # Telegram user id of the sender (0 for our own outbound messages). Used to
+    # enforce the per-person daily reply cap reliably, independent of names.
+    sender_id: Mapped[int] = mapped_column(BigInteger, default=0)
     sender_name: Mapped[str] = mapped_column(String(255), default="")
     direction: Mapped[str] = mapped_column(String(16))  # in | out
     text: Mapped[str] = mapped_column(Text, default="")

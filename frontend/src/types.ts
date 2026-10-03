@@ -25,6 +25,7 @@ export interface Group {
   prompt_id: number | null;
   mode: "mention" | "always" | "off";
   reply_scope: "relevant" | "all";
+  max_replies_per_user_per_day: number;
   active: boolean;
   created_at: string;
 }
