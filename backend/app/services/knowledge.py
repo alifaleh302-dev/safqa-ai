@@ -57,7 +57,7 @@ class KnowledgeBase:
     def products(self) -> list[dict]:
         return list(self._load().get("products", []))
 
-    def search(self, query: str, limit: int = 3) -> list[dict]:
+    def search(self, query: str, limit: int = 3, require_match: bool = False) -> list[dict]:
         products = self.products
         if not products:
             return []
@@ -79,19 +79,24 @@ class KnowledgeBase:
             for token in q.split():
                 if len(token) > 2 and token in haystack:
                     score += 1
-            # Always keep a baseline so an unmatched catalogue still gives context.
             scored.append((score, product))
 
         scored.sort(key=lambda item: item[0], reverse=True)
         top = [product for score, product in scored if score > 0]
-        return (top or [p for _, p in scored])[:limit]
+        if top:
+            return top[:limit]
+        # No keyword matched: only fall back to the full catalogue when the
+        # caller explicitly wants a baseline (e.g. admin preview).
+        return products[:limit] if not require_match else []
 
-    def render_context(self, query: str = "") -> str:
+    def render_context(self, query: str = "", require_match: bool = False) -> str:
         """Render a compact product block to append to the system prompt."""
         data = self._load()
         if not data.get("products"):
             return ""
-        selected = self.search(query)
+        selected = self.search(query, require_match=require_match)
+        if not selected:
+            return ""
         lines = ["=== PRODUCT CATALOGUE (authoritative, do not invent beyond this) ==="]
         if data.get("currency"):
             lines.append(f"Default currency: {data['currency']}")

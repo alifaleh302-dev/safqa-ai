@@ -1,0 +1,160 @@
+{
+  "dialect_reference": {
+    "name": "Yemeni Arabic - Sanaani",
+    "must_use_markers": [
+      "هسع / هسا (now)",
+      "شتي (what do you want) / تشتي (do you want)",
+      "وينا / وين (where)",
+      "من يان (from where / who are you)",
+      "ماشي / ما شي (there is none)",
+      "عاد (then / still / again, for emphasis)",
+      "ياخي (dude, casual address)",
+      "أبشر / تدلل (at your service)",
+      "حياك (welcome)",
+      "عطني / هات (give me)",
+      "قل لي (tell me)",
+      "طيب / زين (okay)",
+      "بس (but / only)",
+      "كذا (like this)",
+      "خلك (stay / keep)",
+      "سوّى / سوى (to do)"
+    ],
+    "avoid_these": [
+      "Modern Standard Arabic formality: بالطبع، يسعدني، أود أن، كيف يمكنني مساعدتك، أتمنى، بناءً على",
+      "Gulf: وش، أبغى، الحين، شلون، شنو",
+      "Egyptian: عايز، ازاي، خالص، ازيك",
+      "Levantine: شو، بدي، هيك، منيح، كيفك"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "price_negotiation",
+      "title": "مفاوضة سعر حقيقية",
+      "goal": "إقناع العميل بالتواصل على الخاص وإتمام الاتفاق",
+      "turns": [
+        {
+          "client": "السلام عليكم، شتي عندكم من خدمات؟",
+          "expect": "reply"
+        },
+        {
+          "client": "ابغى موقع لمحل عطور، كم يسوى عندكم؟",
+          "expect": "reply"
+        },
+        {
+          "client": "غالي شوي.. ما شي تخفيض؟",
+          "expect": "reply"
+        },
+        {
+          "client": "طيب خلنا نتفاهم على الخاص",
+          "expect": "reply"
+        }
+      ]
+    },
+    {
+      "id": "mockery_refusal",
+      "title": "سخرية وطلب التوقف (من محادثة حقيقية)",
+      "goal": "عدم إظهار أنك بوت، والانسحاب بهدوء عند الرفض",
+      "turns": [
+        {
+          "client": "عندنا منتجات تطبيقات مواقع، اللي يشتي يتواصل معي",
+          "expect": "ignore"
+        },
+        {
+          "client": "وين جا صاحب تطبيقات الويب؟",
+          "expect": "ignore"
+        },
+        {
+          "client": "خلاص مابيك",
+          "expect": "ignore"
+        },
+        {
+          "client": "انت بوت صح؟",
+          "expect": "reply_or_ignore"
+        },
+        {
+          "client": "شوف كيف كررت ردك، يبان عليك ذكاء اصطناعي",
+          "expect": "ignore"
+        }
+      ]
+    },
+    {
+      "id": "hesitant_details",
+      "title": "عميل متردد يسأل عن التفاصيل",
+      "goal": "طمأنة العميل ونقله للخاص",
+      "turns": [
+        {
+          "client": "كيف يعني ردود بأسلوب بشري؟",
+          "expect": "reply"
+        },
+        {
+          "client": "وهل تشتغل مع مجموعات يمنية؟",
+          "expect": "reply"
+        },
+        {
+          "client": "طيب وكم المدة؟",
+          "expect": "reply"
+        },
+        {
+          "client": "خليني أفكر وبرجع لك",
+          "expect": "ignore"
+        }
+      ]
+    },
+    {
+      "id": "unrelated_chatter",
+      "title": "كلام عام غير موجّه لنا",
+      "goal": "عدم التدخل في حديث لا يخصّنا",
+      "turns": [
+        {
+          "client": "صباح الخير يا جماعة",
+          "expect": "ignore"
+        },
+        {
+          "client": "حد عنده فكرة عن أسعار الذهب اليوم؟",
+          "expect": "ignore"
+        }
+      ]
+    },
+    {
+      "id": "dm_goal",
+      "title": "العميل جاهز للتواصل",
+      "goal": "توجيه العميل إلى الخاص بأسلوب طبيعي",
+      "turns": [
+        {
+          "client": "تمام، كيف نكمل؟",
+          "expect": "reply"
+        }
+      ]
+    },
+    {
+      "id": "insult_stop",
+      "title": "إهانة وطلب الإبعاد",
+      "goal": "الانسحاب بكرامة بلا جدال",
+      "turns": [
+        {
+          "client": "انت ما تفهم، روح بعيد عننا",
+          "expect": "ignore"
+        }
+      ]
+    },
+    {
+      "id": "repeat_pressure",
+      "title": "تكرار نفس السؤال (اختبار التكرار الروبوتي)",
+      "goal": "ألا يبدو الرد مكرراً أو آلياً",
+      "turns": [
+        {
+          "client": "كم السعر؟",
+          "expect": "reply"
+        },
+        {
+          "client": "كم السعر؟",
+          "expect": "reply_or_ignore"
+        },
+        {
+          "client": "قلت لك كم؟",
+          "expect": "ignore"
+        }
+      ]
+    }
+  ]
+}

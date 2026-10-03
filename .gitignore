@@ -25,3 +25,6 @@ frontend/.vite/
 
 # ---- TS build info ----
 *.tsbuildinfo
+
+# Eval run outputs (large, regenerated)
+backend/eval/results*.json

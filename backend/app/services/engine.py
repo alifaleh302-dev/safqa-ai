@@ -33,22 +33,32 @@ no corporate tone, no emojis unless the client used them, no bullet lists.
 
 RELEVANCE_RULE = """\
 
-Before deciding, judge whether the message is relevant to our offer.
+Before deciding, judge whether the message is an ACTUAL REQUEST FOR OUR PRODUCTS.
+
+Reply ONLY when the message is a real request or inquiry about our products or
+services — asking about price, features, availability, ordering, delivery, or
+asking us to do the work.
+
+Ignore everything else, including:
+- greetings, thanks, laughter, stickers, and small talk;
+- questions or news about anything that is not our product;
+- messages between other members that are not addressed to us;
+- a vague mention of our field with no request (e.g. someone just says
+  "المواقع حلوة" or "شفت موقع حلو" — that is not a request for us);
+- spam, forwarded ads, and pure mockery.
 
 Add this field to the JSON:
   "relevant": true | false
 
-- "relevant": true when the message is, or plausibly could be, about our product,
-  pricing, delivery, ordering, or is otherwise addressed to us.
-- "relevant": false when it is unrelated chatter between other members, a plain
-  greeting or small talk not aimed at us, spam, forwarded ads, or a topic clearly
-  unrelated to what we sell. When "relevant" is false you MUST set "action" to
-  "ignore" and "reply" to "".
+Set "relevant": true ONLY for a real request for our products; otherwise false.
+When "relevant" is false you MUST set "action" to "ignore" and "reply" to "".
 """
 
 BEHAVIOUR_RULES = """\
 
 Human behaviour rules (these override the operator persona when they conflict):
+- Reply ONLY to a real request for our products. If there is no explicit request
+  (price, features, ordering, delivery, doing the work), do not reply at all.
 - One reply per incoming message. Never send two variants of the same answer.
 - Do not answer every line. If the last message adds nothing new, or is just
   "ok", "thanks", a laugh, a sticker, or filler, choose "ignore".
@@ -95,13 +105,23 @@ async def decide(
 
     # Inject the authoritative product catalogue for this query so the model
     # never has to rely on prices hand-written in the operator prompt.
-    catalogue = kb.render_context(latest_text)
+    catalogue = kb.render_context(latest_text, require_match=True)
     instruction = DECISION_INSTRUCTION + BEHAVIOUR_RULES
     if reply_scope != "all":
         instruction += RELEVANCE_RULE
-    system = f"{instruction}\n\n=== OPERATOR RULES ===\n{system_prompt}"
+    system = instruction
+    # The catalogue goes FIRST and the operator rules LAST: the operator's own
+    # product/price/floor must win, and models weight trailing text more.
     if catalogue:
         system += f"\n\n{catalogue}"
+    system += (
+        "\n\n=== OPERATOR RULES (AUTHORITATIVE - THESE OVERRIDE EVERYTHING ABOVE) ===\n"
+        f"{system_prompt}\n"
+        "\nIf the OPERATOR RULES name a product, price, or floor, use exactly those and"
+        " ignore any conflicting entry in the catalogue above. Never pitch a product"
+        " that is not in the OPERATOR RULES. Keep the operator's tone and dialect even"
+        " if the catalogue is written in a different style."
+    )
 
     data = await client.generate_json(system, conversation)
 
@@ -109,11 +129,11 @@ async def decide(
     if action not in {"reply", "ignore", "escalate"}:
         action = "escalate"
 
-    if reply_scope != "all" and not bool(data.get("relevant", True)):
+    if reply_scope != "all" and not bool(data.get("relevant", False)):
         return Decision(
             action="ignore",
             reply="",
-            reason=str(data.get("reason", "")).strip() or "not relevant to our offer",
+            reason=str(data.get("reason", "")).strip() or "not a request for our products",
         )
 
     return Decision(
