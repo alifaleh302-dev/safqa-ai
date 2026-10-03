@@ -18,7 +18,9 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-negotiator}:${POSTGRES_PASSWORD:-negotiator}@db:5432/${POSTGRES_DB:-negotiator}
+      # Defaults to the bundled Postgres; set DATABASE_URL in .env to point at
+      # an external database (e.g. Railway) instead.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-negotiator}:${POSTGRES_PASSWORD:-negotiator}@db:5432/${POSTGRES_DB:-negotiator}}
     volumes:
       # Persist the encrypted Telethon sessions and the editable product catalogue.
       - ./backend/data:/app/data

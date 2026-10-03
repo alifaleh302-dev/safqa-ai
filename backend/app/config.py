@@ -50,6 +50,23 @@ class Settings(BaseSettings):
             return 0
         return value
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, value):
+        """Make a bare postgres:// URL usable by SQLAlchemy + psycopg2.
+
+        Railway (and Heroku) hand out ``postgres://`` or ``postgresql://``;
+        SQLAlchemy 2.x requires an explicit driver, so we add ``+psycopg2``.
+        """
+        if not isinstance(value, str) or not value.strip():
+            return value
+        url = value.strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg2://" + url[len("postgresql://") :]
+        return url
+
 
 @lru_cache
 def get_settings() -> Settings:
