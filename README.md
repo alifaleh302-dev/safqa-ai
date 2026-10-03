@@ -96,6 +96,36 @@ docker compose up --build
 
 ---
 
+## النشر على منصة سحابية (Railway / Render / Fly)
+
+المشروع جاهز للاستضافة. الفكرة: **قاعدة البيانات تُستضاف منفصلة**، والتطبيق يتصل بها عبر `DATABASE_URL`.
+
+### قاعدة بيانات Postgres مُدارة
+أنشئ خدمة Postgres على المنصة وانسخ رابط الاتصال الداخلي، مثال Railway:
+```
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+```
+> لا تحتاج إضافة `+psycopg2` — الكود يطبّعه تلقائياً.
+
+### حاويات التطبيق
+- **backend:** FastAPI (يُنشئ الجداول تلقائياً عند الإقلاع — لا حاجة لتشغيل migrations يدوياً).
+- **frontend:** nginx يخدم الواجهة ويوجّه `/api` و`/ws` إلى الـ backend.
+- عند استخدام قاعدة بيانات خارجية، يمكن حذف خدمة `db` من `docker-compose.yml` وضبط `DATABASE_URL` في `.env`.
+
+### متغيّرات البيئة المطلوبة
+| المتغيّر | الوصف |
+|---|---|
+| `DATABASE_URL` | رابط Postgres المُدار |
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | من my.telegram.org |
+| `GEMINI_API_KEY` | مفتاح Google AI Studio |
+| `SECRET_KEY` | تشفير جلسات Telethon |
+| `JWT_SECRET` | توقيع رموز الدخول |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | دخول الواجهة |
+
+> ⚠️ في بيئة سحابية بلا تخزين دائم، احفظ مجلّد `backend/data/` على volume، وإلا فُقدت جلسات تليجرام عند كل إعادة نشر.
+
+---
+
 ## الأمان
 
 - **مصادقة JWT** على الواجهة وكل مسارات API (عدا `/api/health` و`/api/auth/login`).
