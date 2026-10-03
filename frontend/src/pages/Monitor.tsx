@@ -1,32 +1,19 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Decision, Group, Message } from "../types";
+import type { Group } from "../types";
+import { useLiveMonitor } from "../useLiveMonitor";
 
 export default function Monitor() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selected, setSelected] = useState<number | "">("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [auto, setAuto] = useState(true);
+  const { messages, decisions, connected } = useLiveMonitor(true);
 
   useEffect(() => {
     api.groups.list().then(setGroups).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    async function tick() {
-      const [m, d] = await Promise.all([
-        api.monitor.messages(selected === "" ? undefined : selected),
-        api.monitor.decisions(),
-      ]);
-      setMessages(m);
-      setDecisions(d.filter((x) => selected === "" || x.group_id === selected));
-    }
-    tick().catch(() => undefined);
-    if (!auto) return;
-    const id = window.setInterval(() => tick().catch(() => undefined), 4000);
-    return () => window.clearInterval(id);
-  }, [selected, auto]);
+  const shownMessages = messages.filter((m) => selected === "" || m.group_id === selected);
+  const shownDecisions = decisions.filter((d) => selected === "" || d.group_id === selected);
 
   return (
     <>
@@ -41,18 +28,17 @@ export default function Monitor() {
               </option>
             ))}
           </select>
-          <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: "auto" }}>
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} style={{ width: "auto" }} />
-            تحديث تلقائي كل 4 ثوانٍ
-          </label>
+          <span className={`badge ${connected ? "online" : "offline"}`}>
+            {connected ? "● متصل لحظياً" : "○ إعادة الاتصال…"}
+          </span>
         </div>
       </div>
 
       <div className="card">
         <h3>المحادثات</h3>
-        {messages.length === 0 && <p className="muted">لا توجد رسائل بعد.</p>}
+        {shownMessages.length === 0 && <p className="muted">لا توجد رسائل بعد.</p>}
         <div className="chat">
-          {[...messages].reverse().map((m) => (
+          {[...shownMessages].reverse().map((m) => (
             <div key={m.id} className={`bubble ${m.direction}`}>
               <div className="small" style={{ opacity: 0.8, marginBottom: 3 }}>
                 {m.direction === "in" ? m.sender_name : "أنا"} · {new Date(m.created_at).toLocaleTimeString("ar")}
@@ -65,8 +51,8 @@ export default function Monitor() {
 
       <div className="card">
         <h3>قرارات الذكاء الاصطناعي</h3>
-        {decisions.length === 0 && <p className="muted">لا توجد قرارات بعد.</p>}
-        {decisions.slice(0, 20).map((d) => (
+        {shownDecisions.length === 0 && <p className="muted">لا توجد قرارات بعد.</p>}
+        {shownDecisions.slice(0, 20).map((d) => (
           <div key={d.id} className="card" style={{ background: "var(--panel-2)", marginBottom: 8 }}>
             <span className={`badge ${d.action}`}>{d.action}</span>
             <span className="muted small" style={{ marginInlineStart: 8 }}>

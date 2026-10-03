@@ -1,0 +1,52 @@
+{
+  "currency": "USD",
+  "notes": "أسعار قابلة للتفاوض ضمن الحدود المذكورة لكل منتج. لا تُعلن الحد الأدنى للعميل مباشرة.",
+  "products": [
+    {
+      "id": "prod-001",
+      "name": "باقة إدارة تليجرام الاحترافية",
+      "name_en": "Pro Telegram Management Package",
+      "price": 100,
+      "min_price": 80,
+      "currency": "USD",
+      "features": [
+        "مراقبة حتى 5 مجموعات",
+        "ردود بأسلوب بشري",
+        "تقارير أسبوعية"
+      ],
+      "delivery": "خلال 48 ساعة",
+      "keywords": ["إدارة", "تليجرام", "باقة", "احترافي", "management", "telegram"]
+    },
+    {
+      "id": "prod-002",
+      "name": "باقة المبيعات الذكية",
+      "name_en": "Smart Sales Package",
+      "price": 250,
+      "min_price": 200,
+      "currency": "USD",
+      "features": [
+        "تفاوض آلي مع العملاء",
+        "قاعدة معرفة مخصّصة",
+        "تكامل مع Gemini",
+        "دعم فني 30 يوماً"
+      ],
+      "delivery": "خلال 5 أيام عمل",
+      "keywords": ["مبيعات", "تفاوض", "ذكي", "sales", "negotiation"]
+    },
+    {
+      "id": "prod-003",
+      "name": "استشارة تحسين التفاوض",
+      "name_en": "Negotiation Optimization Consultation",
+      "price": 50,
+      "min_price": 50,
+      "currency": "USD",
+      "features": [
+        "جلسة واحدة (60 دقيقة)",
+        "تحليل محادثاتك الحالية",
+        "خطة تحسين عملية"
+      ],
+      "delivery": "بحسب الموعد المتفق عليه",
+      "keywords": ["استشارة", "تحسين", "consultation"]
+    }
+  ]
+}

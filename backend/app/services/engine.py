@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 
 from .gemini import GeminiClient, GeminiError
+from .knowledge import kb
 
 # The model must return strict JSON so the userbot can decide deterministically.
 # "escalate" is the safe escape hatch: anything sensitive is handed to a human.
@@ -52,7 +53,13 @@ async def decide(
     conversation = list(history) + [
         {"role": "user", "text": f"{sender_name}: {latest_text}"}
     ]
+
+    # Inject the authoritative product catalogue for this query so the model
+    # never has to rely on prices hand-written in the operator prompt.
+    catalogue = kb.render_context(latest_text)
     system = f"{DECISION_INSTRUCTION}\n\n=== OPERATOR RULES ===\n{system_prompt}"
+    if catalogue:
+        system += f"\n\n{catalogue}"
 
     data = await client.generate_json(system, conversation)
 

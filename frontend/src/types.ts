@@ -64,3 +64,22 @@ export interface Settings {
   max_replies_per_hour: number;
   max_replies_per_day: number;
 }
+
+export interface Product {
+  id?: string;
+  name: string;
+  name_en?: string;
+  price?: number;
+  min_price?: number;
+  currency?: string;
+  features?: string[];
+  delivery?: string;
+  keywords?: string[];
+}
+
+export interface KnowledgeBase {
+  path: string;
+  exists: boolean;
+  products: Product[];
+  rendered: string;
+}

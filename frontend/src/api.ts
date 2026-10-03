@@ -1,10 +1,31 @@
-import type { Account, Decision, Event, Group, Message, Prompt, Settings } from "./types";
+import type { Account, Decision, Event, Group, KnowledgeBase, Message, Prompt, Settings } from "./types";
+
+const TOKEN_KEY = "tn_token";
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getToken();
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...options,
   });
+  if (res.status === 401) {
+    clearToken();
+    if (!url.includes("/api/auth/login")) window.location.reload();
+    throw new Error("انتهت الجلسة، سجّل الدخول مجدداً");
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -61,5 +82,14 @@ export const api = {
   settings: {
     get: () => request<Settings>("/api/settings"),
     update: (body: Record<string, unknown>) => put<Settings>("/api/settings", body),
+  },
+  knowledge: {
+    get: () => request<KnowledgeBase>("/api/knowledge"),
+    update: (body: unknown) => put<KnowledgeBase>("/api/knowledge", body),
+  },
+  auth: {
+    login: (username: string, password: string) =>
+      post<{ access_token: string; username: string }>("/api/auth/login", { username, password }),
+    me: () => request<{ username: string }>("/api/auth/me"),
   },
 };

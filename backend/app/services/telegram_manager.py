@@ -12,16 +12,22 @@ from ..config import get_settings
 from ..db import SessionLocal
 from . import engine, humanize
 from .gemini import GeminiError
+from .ws_manager import publish as ws_publish
 
 # One in-memory Telegram client per account id.
 _clients: dict[int, TelegramClient] = {}
 _handlers: dict[int, object] = {}
+
+# Background supervisors that watch each client and reconnect it if it drops.
+_supervisors: dict[int, asyncio.Task] = {}
 
 # Simple in-memory anti-spam counters keyed by account id.
 _reply_log: dict[int, list[datetime]] = defaultdict(list)
 
 # Sign-in flows in progress, keyed by account id.
 _pending: dict[int, dict] = {}
+
+RECONNECT_MAX_BACKOFF = 300  # seconds
 
 
 def is_connected(account_id: int) -> bool:
@@ -149,16 +155,87 @@ async def _register(account_id: int, client: TelegramClient) -> None:
         account.label = account.label or (me.username or me.first_name or account.phone)
         db.commit()
 
+    _start_supervisor(account_id)
 
-async def disconnect(account_id: int) -> None:
-    client = _clients.pop(account_id, None)
-    if client is not None:
-        await client.disconnect()
+
+def _start_supervisor(account_id: int) -> None:
+    """Ensure a single reconnect watcher is running for this account."""
+    existing = _supervisors.get(account_id)
+    if existing is not None and not existing.done():
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _supervisors[account_id] = loop.create_task(_supervise(account_id))
+
+
+def _stop_supervisor(account_id: int) -> None:
+    task = _supervisors.pop(account_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+async def _supervise(account_id: int) -> None:
+    """Watch a client's connection and reconnect with exponential backoff.
+
+    Telethon's own auto-reconnect handles short blips; this loop covers the
+    cases it does not — the session being revoked, the client having been
+    disconnected, or repeated failures — and keeps the account status in the
+    DB (and the live UI) truthful.
+    """
+    attempt = 0
+    while True:
+        await asyncio.sleep(5)
+        client = _clients.get(account_id)
+        if client is None:
+            return
+        try:
+            if client.is_connected():
+                attempt = 0
+                continue
+            _log_event("warning", "telegram", f"account {account_id} disconnected; reconnecting")
+            attempt += 1
+            await client.connect()
+            if not await client.is_user_authorized():
+                raise RuntimeError("session no longer authorized")
+            # Re-attach handlers in case the client object was replaced.
+            async def on_new_message(event: events.NewMessage.Event) -> None:
+                await _handle_incoming(account_id, event)
+
+            client.remove_event_handler(_handlers.get(account_id, on_new_message))
+            client.add_event_handler(on_new_message, events.NewMessage(incoming=True))
+            _handlers[account_id] = on_new_message
+            _clients[account_id] = client
+            _set_status(account_id, "online")
+            _log_event("info", "telegram", f"account {account_id} reconnected")
+            attempt = 0
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - keep the loop alive
+            _set_status(account_id, "offline")
+            _log_event("error", "telegram", f"account {account_id} reconnect failed: {exc}")
+            backoff = min(RECONNECT_MAX_BACKOFF, 5 * 2 ** min(attempt, 6))
+            await asyncio.sleep(backoff)
+
+
+def _set_status(account_id: int, status: str) -> None:
     with SessionLocal() as db:
         account = db.get(models.Account, account_id)
-        if account:
-            account.status = "offline"
+        if account is not None:
+            account.status = status
             db.commit()
+
+
+async def disconnect(account_id: int) -> None:
+    _stop_supervisor(account_id)
+    client = _clients.pop(account_id, None)
+    if client is not None:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+    _set_status(account_id, "offline")
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +283,7 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
             sender = await event.get_sender()
             sender_name = _display_name(sender)
 
-            # Store inbound message
+            # Store inbound message (also broadcast to live monitor).
             inbound = models.Message(
                 group_id=group_id,
                 telegram_message_id=event.id,
@@ -218,6 +295,14 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
             db.commit()
             db.refresh(inbound)
             inbound_id = inbound.id
+            inbound_payload = {
+                "id": inbound.id,
+                "group_id": inbound.group_id,
+                "sender_name": inbound.sender_name,
+                "direction": inbound.direction,
+                "text": inbound.text,
+                "created_at": inbound.created_at.isoformat(),
+            }
 
             history_rows = (
                 db.query(models.Message)
@@ -230,6 +315,8 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
                 {"direction": m.direction, "text": m.text, "sender_name": m.sender_name}
                 for m in reversed(history_rows)
             ]
+
+        ws_publish("message", inbound_payload)
 
         if mode == "off" or not _should_respond(mode, event, group_id):
             _log_decision(group_id, inbound_id, "ignore", "", "mode/filter: not addressed to us")
@@ -296,26 +383,33 @@ def _should_respond(mode: str, event: events.NewMessage.Event, group_id: int) ->
 async def _send_human(account_id: int, chat_id: int, reply: str, group_id: int) -> None:
     client = _clients.get(account_id)
     if client is None:
+        _log_event("warning", "telegram", f"account {account_id} not connected; reply skipped")
         return
     bubbles = humanize.split_message(reply)
     for i, bubble in enumerate(bubbles):
         if not bubble:
             continue
         await humanize.human_pause(humanize.typing_delay(bubble))
-        async with client.action(chat_id, "typing"):
-            await humanize.human_pause(min(1.5, humanize.typing_delay(bubble) * 0.3))
-        sent = await client.send_message(chat_id, bubble)
-        with SessionLocal() as db:
-            db.add(
-                models.Message(
-                    group_id=group_id,
-                    telegram_message_id=getattr(sent, "id", 0),
-                    sender_name="me",
-                    direction="out",
-                    text=bubble,
-                )
-            )
-            db.commit()
+        try:
+            async with client.action(chat_id, "typing"):
+                await humanize.human_pause(min(1.5, humanize.typing_delay(bubble) * 0.3))
+            sent = await client.send_message(chat_id, bubble)
+        except Exception as exc:  # noqa: BLE001 - network blips are expected
+            # One reconnect attempt, then let the supervisor take over.
+            _log_event("warning", "telegram", f"send failed, retrying after reconnect: {exc}")
+            try:
+                await client.connect()
+                sent = await client.send_message(chat_id, bubble)
+            except Exception as exc2:  # noqa: BLE001
+                _log_event("error", "telegram", f"send failed permanently: {exc2}")
+                return
+        _store_message(
+            group_id=group_id,
+            telegram_message_id=getattr(sent, "id", 0),
+            sender_name="me",
+            direction="out",
+            text=bubble,
+        )
         if i < len(bubbles) - 1:
             await humanize.human_pause(random_bubble_gap())
 
@@ -332,22 +426,70 @@ def random_bubble_gap() -> float:
 
 def _log_decision(group_id: int, message_id: Optional[int], action: str, reply: str, reason: str) -> None:
     with SessionLocal() as db:
-        db.add(
-            models.Decision(
-                group_id=group_id,
-                message_id=message_id,
-                action=action,
-                reply_text=reply,
-                reason=reason,
-            )
+        decision = models.Decision(
+            group_id=group_id,
+            message_id=message_id,
+            action=action,
+            reply_text=reply,
+            reason=reason,
         )
+        db.add(decision)
         db.commit()
+        db.refresh(decision)
+        payload = {
+            "id": decision.id,
+            "group_id": decision.group_id,
+            "action": decision.action,
+            "reply_text": decision.reply_text,
+            "reason": decision.reason,
+            "created_at": decision.created_at.isoformat(),
+        }
+    ws_publish("decision", payload)
 
 
 def _log_event(level: str, source: str, message: str) -> None:
     with SessionLocal() as db:
-        db.add(models.Event(level=level, source=source, message=message))
+        event = models.Event(level=level, source=source, message=message)
+        db.add(event)
         db.commit()
+        db.refresh(event)
+        payload = {
+            "id": event.id,
+            "level": event.level,
+            "source": event.source,
+            "message": event.message,
+            "created_at": event.created_at.isoformat(),
+        }
+    ws_publish("event", payload)
+
+
+def _store_message(
+    group_id: int,
+    telegram_message_id: int,
+    sender_name: str,
+    direction: str,
+    text: str,
+) -> None:
+    with SessionLocal() as db:
+        message = models.Message(
+            group_id=group_id,
+            telegram_message_id=telegram_message_id,
+            sender_name=sender_name,
+            direction=direction,
+            text=text,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        payload = {
+            "id": message.id,
+            "group_id": message.group_id,
+            "sender_name": message.sender_name,
+            "direction": message.direction,
+            "text": message.text,
+            "created_at": message.created_at.isoformat(),
+        }
+    ws_publish("message", payload)
 
 
 async def resolve_group(account_id: int, telegram_id: int) -> str:

@@ -127,3 +127,36 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
   font-size: 14px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.4);
 }
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.login-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+.login-card h1 { margin: 0 0 6px; font-size: 20px; }
+.login-card p { margin: 0 0 18px; }
+.login-error {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(239,68,68,0.12);
+  color: var(--danger);
+  font-size: 13px;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -50,7 +50,7 @@ class Group(Base):
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(Integer, unique=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     title: Mapped[str] = mapped_column(String(255), default="")
     account_id: Mapped[Optional[int]] = mapped_column(ForeignKey("accounts.id"), default=None)
     prompt_id: Mapped[Optional[int]] = mapped_column(ForeignKey("prompts.id"), default=None)
@@ -69,7 +69,7 @@ class Message(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
-    telegram_message_id: Mapped[int] = mapped_column(Integer, default=0)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, default=0)
     sender_name: Mapped[str] = mapped_column(String(255), default="")
     direction: Mapped[str] = mapped_column(String(16))  # in | out
     text: Mapped[str] = mapped_column(Text, default="")
