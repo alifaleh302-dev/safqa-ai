@@ -120,3 +120,20 @@ v3 صنعانية+تنويع 8.69 | v4 +فلتر طلب 8.73 | v5 +أمثلة ا
 - يجب أن يكون Root Directory للخدمة فارغاً (الجذر)، لا backend ولا frontend.
 - بديل بسياق مختلف: خدمتان، backend/railway.json و frontend/railway.json مع nginx.
 - `.dockerignore` في الجذر يستبعد node_modules/dist/.env/.git/eval حتى لا تتلوّث الصورة.
+
+### قاعدة البيانات على Railway (CRASHED بعد نجاح البناء)
+كان البناء ينجح ثم ينهار التطبيق بـ
+`RuntimeError: Database not reachable ... could not translate host name "postgres.railway.internal"`.
+السبب: متغيّر `DATABASE_URL` كان مكتوباً يدوياً لقاعدة من مشروع آخر، ولا توجد خدمة Postgres
+في المشروع أصلاً. الحل:
+- أضف خدمة Postgres من القالب الرسمي (`templateDeployV2` بمعرّف القالب `b55da7dc-09be-4140-bc65-1284d15d349c`
+  بعد جلب `serializedConfig` من `template(code:"postgres")`).
+- اربط التطبيق بها بمرجع Railway: `DATABASE_URL = ${{Postgres.DATABASE_URL}}`
+  (يجب بادئة `$` قبل `{{`، وإلا يُقرأ حرفياً ويفشل `create_engine`).
+- `config.py` يحوّل `postgresql://` إلى `postgresql+psycopg2://` تلقائياً.
+
+### المنفذ 502 على الرابط العام
+النشر `SUCCESS` والتطبيق يعمل على `0.0.0.0:8080` (Railway يحقن `PORT=8080`) لكن الحافة ترد
+502 لأن `targetPort` للنطاق كان 80. الحل: `serviceDomainUpdate(targetPort=8080)`.
+تذكير: في Railway الحديث `builder` enum لا يقبل `DOCKERFILE`؛ وجود `dockerfilePath` هو ما
+يفعّل البناء بـ Dockerfile، و`rootDirectory` يجب أن يكون فارغاً (الجذر).
