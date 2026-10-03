@@ -33,6 +33,10 @@ services:
 
   frontend:
     build: ./frontend
+    environment:
+      PORT: 80
+      BACKEND_HOST: backend
+      BACKEND_PORT: 8000
     depends_on:
       - backend
     ports:

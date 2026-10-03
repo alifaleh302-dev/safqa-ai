@@ -124,6 +124,32 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
 
 > ⚠️ في بيئة سحابية بلا تخزين دائم، احفظ مجلّد `backend/data/` على volume، وإلا فُقدت جلسات تليجرام عند كل إعادة نشر.
 
+### خطوات Railway (خطوة بخطوة)
+
+المستودع يحتوي `railway.json` داخل `backend/` و`frontend/`، لذا يكفي ضبط الجذر لكل خدمة.
+
+1. **قاعدة البيانات:** أنشئ خدمة **Postgres** من لوحة Railway.
+2. **الـ backend:** New Service → Deploy from GitHub → اختر المستودع → عيّن **Root Directory = `backend`**.
+3. **الـ frontend:** New Service → نفس المستودع → **Root Directory = `frontend`**.
+4. **اربط الـ backend بالقاعدة:** في خدمة الـ backend، أضف متغيّراً:
+   ```
+   DATABASE_URL = ${{Postgres.DATABASE_URL}}
+   ```
+   (Railway يمرّر الرابط الداخلي تلقائياً — الكود يطبّعه إلى `postgresql+psycopg2://`).
+5. **متغيّرات مشتركة** (backend): `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `GEMINI_API_KEY`,
+   `SECRET_KEY`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
+6. **ربط الواجهة بالـ API:** في خدمة الـ frontend أضف:
+   ```
+   BACKEND_HOST = ${{backend.RAILWAY_PRIVATE_DOMAIN}}
+   BACKEND_PORT = 8000
+   ```
+   و`PORT` يوفّره Railway تلقائياً. (محلياً الافتراضيات: `backend` / `8000` / `80`.)
+7. **تخزين الجلسات:** أضف **Volume** على مسار `/app/data` في خدمة الـ backend.
+8. **الوصول:** انقر Generate Domain لخدمة الـ frontend، وافتح الرابط.
+
+> ملاحظة: الـ backend يربط على `$PORT` الذي توفّره المنصة، والـ frontend يبني إعداد nginx من
+> `PORT` + `BACKEND_HOST` + `BACKEND_PORT` عند الإقلاع (قوالب nginx الرسمية).
+
 ---
 
 ## الأمان
