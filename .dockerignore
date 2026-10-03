@@ -1,0 +1,22 @@
+# Keep the build context small and never copy host-built artifacts into images.
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+
+# Local secrets and runtime state
+.env
+*.session
+*.session-journal
+
+# Local Postgres/eval artifacts
+backend/eval/results*.json
+pgdata
+
+# VCS and docs
+.git
+.gitignore
+AGENTS.md
+docs

@@ -1,7 +1,10 @@
 import asyncio
+import os
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .auth import current_user
 from .config import get_settings
@@ -78,3 +81,12 @@ async def _restore_accounts() -> None:
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "app": settings.app_name}
+
+
+# Optionally serve the built SPA from the same process (single-service deploy).
+# The frontend calls the API with relative /api paths, so serving both from one
+# origin avoids cross-service wiring entirely. Mounted LAST so it never shadows
+# the /api routes above.
+_spa_dir = Path(os.getenv("SPA_DIR", "static"))
+if _spa_dir.is_dir() and (_spa_dir / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(_spa_dir), html=True), name="spa")
