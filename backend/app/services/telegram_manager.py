@@ -28,11 +28,18 @@ _reply_log: dict[int, list[datetime]] = defaultdict(list)
 _pending: dict[int, dict] = {}
 
 RECONNECT_MAX_BACKOFF = 300  # seconds
+# Telegram clears the "typing…" status after a few seconds, so it is re-sent at
+# this interval while the agent is "composing" a reply.
+TYPING_PING_INTERVAL = 4.0
 
 
 def is_connected(account_id: int) -> bool:
     client = _clients.get(account_id)
     return bool(client and client.is_connected())
+
+
+def has_handler(account_id: int) -> bool:
+    return account_id in _handlers
 
 
 def pending_accounts() -> list[int]:
@@ -279,6 +286,7 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
                 return
             system_text = prompt.system_text
             mode = group.mode
+            reply_scope = group.reply_scope
 
             sender = await event.get_sender()
             sender_name = _display_name(sender)
@@ -333,6 +341,7 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
                 engine.build_history(history[:-1], get_settings().max_context_messages),
                 text,
                 sender_name,
+                reply_scope=reply_scope,
             )
         except GeminiError as exc:
             _log_decision(group_id, inbound_id, "escalate", "", f"AI error: {exc}")
@@ -380,6 +389,23 @@ def _should_respond(mode: str, event: events.NewMessage.Event, group_id: int) ->
     return False
 
 
+async def _show_typing(client, chat_id: int, duration: float) -> None:
+    """Keep the 'typing…' status visible for roughly `duration` seconds.
+
+    Telegram clears the status after a few seconds, so it must be re-sent until
+    the planned typing time elapses. Failures are swallowed: the indicator is
+    cosmetic and must never block or fail the actual reply.
+    """
+    try:
+        async with client.action(chat_id, "typing"):
+            remaining = duration
+            while remaining > 0:
+                await humanize.human_pause(min(TYPING_PING_INTERVAL, remaining))
+                remaining -= TYPING_PING_INTERVAL
+    except Exception:  # noqa: BLE001 - best-effort cosmetic status
+        pass
+
+
 async def _send_human(account_id: int, chat_id: int, reply: str, group_id: int) -> None:
     client = _clients.get(account_id)
     if client is None:
@@ -389,10 +415,8 @@ async def _send_human(account_id: int, chat_id: int, reply: str, group_id: int) 
     for i, bubble in enumerate(bubbles):
         if not bubble:
             continue
-        await humanize.human_pause(humanize.typing_delay(bubble))
+        await _show_typing(client, chat_id, humanize.typing_delay(bubble))
         try:
-            async with client.action(chat_id, "typing"):
-                await humanize.human_pause(min(1.5, humanize.typing_delay(bubble) * 0.3))
             sent = await client.send_message(chat_id, bubble)
         except Exception as exc:  # noqa: BLE001 - network blips are expected
             # One reconnect attempt, then let the supervisor take over.
@@ -463,6 +487,10 @@ def _log_event(level: str, source: str, message: str) -> None:
     ws_publish("event", payload)
 
 
+def log_warning(message: str) -> None:
+    _log_event("warning", "config", message)
+
+
 def _store_message(
     group_id: int,
     telegram_message_id: int,
@@ -502,3 +530,59 @@ async def resolve_group(account_id: int, telegram_id: int) -> str:
         return getattr(entity, "title", "") or ""
     except Exception:
         return ""
+
+
+async def account_identity(account_id: int) -> dict:
+    """Basic identity of the connected account, to confirm which user is live."""
+    client = _clients.get(account_id)
+    if client is None or not client.is_connected():
+        return {}
+    try:
+        me = await client.get_me()
+    except Exception:
+        return {}
+    return {
+        "id": me.id,
+        "username": me.username or "",
+        "first_name": me.first_name or "",
+        "phone": me.phone or "",
+        "is_bot": bool(me.bot),
+    }
+
+
+async def can_access_group(account_id: int, telegram_id: int) -> tuple[bool, str]:
+    """Check whether the client can resolve a group, returning the reason if not."""
+    client = _clients.get(account_id)
+    if client is None:
+        return False, "account not connected"
+    try:
+        await client.get_entity(telegram_id)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+async def list_dialogs(account_id: int) -> list[dict]:
+    """List the groups/channels the connected account is a member of.
+
+    Used by the admin UI to pick real group ids, and to confirm the userbot is
+    actually a member of a group it is expected to watch.
+    """
+    client = _clients.get(account_id)
+    if client is None:
+        raise ValueError("Account is not connected")
+    dialogs = await client.get_dialogs()
+    result = []
+    for dialog in dialogs:
+        entity = dialog.entity
+        if not (getattr(entity, "megagroup", False) or getattr(entity, "broadcast", False) or dialog.is_group):
+            continue
+        result.append(
+            {
+                "id": dialog.id,
+                "title": getattr(entity, "title", "") or "",
+                "is_channel": bool(getattr(entity, "broadcast", False)),
+                "is_group": bool(dialog.is_group),
+            }
+        )
+    return result

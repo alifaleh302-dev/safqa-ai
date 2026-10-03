@@ -24,6 +24,7 @@ export interface Group {
   account_id: number | null;
   prompt_id: number | null;
   mode: "mention" | "always" | "off";
+  reply_scope: "relevant" | "all";
   active: boolean;
   created_at: string;
 }

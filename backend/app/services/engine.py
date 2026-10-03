@@ -31,6 +31,21 @@ Mirror the client's language (Arabic or English). Sound like a real person, not 
 no corporate tone, no emojis unless the client used them, no bullet lists.
 """
 
+RELEVANCE_RULE = """\
+
+Before deciding, judge whether the message is relevant to our offer.
+
+Add this field to the JSON:
+  "relevant": true | false
+
+- "relevant": true when the message is, or plausibly could be, about our product,
+  pricing, delivery, ordering, or is otherwise addressed to us.
+- "relevant": false when it is unrelated chatter between other members, a plain
+  greeting or small talk not aimed at us, spam, forwarded ads, or a topic clearly
+  unrelated to what we sell. When "relevant" is false you MUST set "action" to
+  "ignore" and "reply" to "".
+"""
+
 
 @dataclass
 class Decision:
@@ -44,8 +59,13 @@ async def decide(
     history: list[dict],
     latest_text: str,
     sender_name: str,
+    reply_scope: str = "relevant",
 ) -> Decision:
-    """Ask Gemini for the next action given the operator's prompt and context."""
+    """Ask Gemini for the next action given the operator's prompt and context.
+
+    ``reply_scope`` controls the relevance gate: "relevant" (default) ignores
+    messages unrelated to the offer, "all" answers anything addressed to us.
+    """
     client = GeminiClient()
     if not client.configured:
         raise GeminiError("Gemini is not configured. Add an API key in Settings.")
@@ -57,7 +77,10 @@ async def decide(
     # Inject the authoritative product catalogue for this query so the model
     # never has to rely on prices hand-written in the operator prompt.
     catalogue = kb.render_context(latest_text)
-    system = f"{DECISION_INSTRUCTION}\n\n=== OPERATOR RULES ===\n{system_prompt}"
+    instruction = DECISION_INSTRUCTION
+    if reply_scope != "all":
+        instruction += RELEVANCE_RULE
+    system = f"{instruction}\n\n=== OPERATOR RULES ===\n{system_prompt}"
     if catalogue:
         system += f"\n\n{catalogue}"
 
@@ -66,6 +89,14 @@ async def decide(
     action = str(data.get("action", "ignore")).lower()
     if action not in {"reply", "ignore", "escalate"}:
         action = "escalate"
+
+    if reply_scope != "all" and not bool(data.get("relevant", True)):
+        return Decision(
+            action="ignore",
+            reply="",
+            reason=str(data.get("reason", "")).strip() or "not relevant to our offer",
+        )
+
     return Decision(
         action=action,
         reply=str(data.get("reply", "")).strip(),

@@ -96,7 +96,9 @@ async def test_message(payload: schemas.TestMessageRequest, db: Session = Depend
         15,
     )
     try:
-        decision = await engine.decide(prompt.system_text, history, payload.text, payload.sender_name)
+        decision = await engine.decide(
+            prompt.system_text, history, payload.text, payload.sender_name, reply_scope=group.reply_scope
+        )
     except GeminiError as exc:
         raise HTTPException(400, str(exc))
     return schemas.TestMessageResponse(action=decision.action, reply=decision.reply, reason=decision.reason)

@@ -60,6 +60,7 @@ class GroupCreate(BaseModel):
     account_id: Optional[int] = None
     prompt_id: Optional[int] = None
     mode: str = "mention"
+    reply_scope: str = "relevant"
 
 
 class GroupUpdate(BaseModel):
@@ -67,6 +68,7 @@ class GroupUpdate(BaseModel):
     account_id: Optional[int] = None
     prompt_id: Optional[int] = None
     mode: Optional[str] = None
+    reply_scope: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -77,6 +79,7 @@ class GroupOut(ORMModel):
     account_id: Optional[int]
     prompt_id: Optional[int]
     mode: str
+    reply_scope: str
     active: bool
     created_at: datetime
 

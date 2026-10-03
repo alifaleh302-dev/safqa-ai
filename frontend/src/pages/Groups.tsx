@@ -15,6 +15,7 @@ export default function Groups({ notify }: Props) {
   const [accountId, setAccountId] = useState<number | "">("");
   const [promptId, setPromptId] = useState<number | "">("");
   const [mode, setMode] = useState<Group["mode"]>("mention");
+  const [replyScope, setReplyScope] = useState<Group["reply_scope"]>("relevant");
 
   async function load() {
     const [g, a, p] = await Promise.all([api.groups.list(), api.accounts.list(), api.prompts.list()]);
@@ -38,6 +39,7 @@ export default function Groups({ notify }: Props) {
         account_id: accountId === "" ? null : accountId,
         prompt_id: promptId === "" ? null : promptId,
         mode,
+        reply_scope: replyScope,
       });
       setTelegramId("");
       setTitle("");
@@ -83,7 +85,8 @@ export default function Groups({ notify }: Props) {
       <div className="card">
         <p className="muted">
           أضف معرّف المجموعة (ID الرقمي). يمكنك الحصول عليه بتحويل رابط أو باستخدام تطبيق. الوضع «mention»
-          يجعل الحساب يرد فقط عند ذكره أو الرد عليه — وهو الأكثر أماناً.
+          يجعل الحساب يرد فقط عند ذكره أو الرد عليه — وهو الأكثر أماناً. نطاق الردّ «ذو صلة» يجعل
+          الذكاء يتجاهل الرسائل غير المتعلّقة بعرضك حتى لا يردّ على كل من في المجموعة.
         </p>
         <div className="row">
           <input placeholder="معرّف المجموعة (مثال: -1001234567890)" value={telegramId} onChange={(e) => setTelegramId(e.target.value)} />
@@ -110,6 +113,10 @@ export default function Groups({ notify }: Props) {
             <option value="mention">عند الذكر فقط (mention)</option>
             <option value="always">دائماً (always)</option>
             <option value="off">معطّل (off)</option>
+          </select>
+          <select value={replyScope} onChange={(e) => setReplyScope(e.target.value as Group["reply_scope"])}>
+            <option value="relevant">ردّ ذو صلة فقط</option>
+            <option value="all">ردّ على كل رسالة موجّهة</option>
           </select>
           <button className="primary" onClick={create}>
             إضافة
@@ -154,6 +161,10 @@ export default function Groups({ notify }: Props) {
               <option value="mention">mention</option>
               <option value="always">always</option>
               <option value="off">off</option>
+            </select>
+            <select value={g.reply_scope} onChange={(e) => update(g, { reply_scope: e.target.value as Group["reply_scope"] })}>
+              <option value="relevant">ذو صلة</option>
+              <option value="all">الكل</option>
             </select>
           </div>
         </div>

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import get_settings
@@ -25,6 +25,24 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    _apply_light_migrations()
+
+
+def _apply_light_migrations() -> None:
+    """Add columns introduced after a database was first created.
+
+    The project has no migration tool yet; this keeps an existing volume usable
+    instead of forcing a reset. Safe to run on every startup (idempotent).
+    """
+    inspector = inspect(engine)
+    if "groups" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("groups")}
+    if "reply_scope" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE groups ADD COLUMN reply_scope VARCHAR(16) DEFAULT 'relevant'")
+            )
 
 
 def get_db():

@@ -97,3 +97,60 @@ async def disconnect(account_id: int, db: Session = Depends(get_db)):
     await tg.disconnect(account_id)
     db.expire_all()
     return _to_out(db.get(models.Account, account_id))
+
+
+@router.get("/{account_id}/dialogs")
+async def list_dialogs(account_id: int, db: Session = Depends(get_db)):
+    """Groups/channels the connected account is actually a member of."""
+    account = db.get(models.Account, account_id)
+    if account is None:
+        raise HTTPException(404, "Account not found")
+    try:
+        return await tg.list_dialogs(account_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, f"Telegram error: {exc}")
+
+
+@router.get("/{account_id}/diagnostics")
+async def diagnostics(account_id: int, db: Session = Depends(get_db)):
+    """Why isn't the userbot replying? Surfaces connection + membership state."""
+    account = db.get(models.Account, account_id)
+    if account is None:
+        raise HTTPException(404, "Account not found")
+
+    info: dict = {
+        "account_id": account_id,
+        "status_in_db": account.status,
+        "has_session": bool(account.session_enc),
+        "client_connected": tg.is_connected(account_id),
+        "handler_attached": tg.has_handler(account_id),
+        "identity": await tg.account_identity(account_id) if tg.is_connected(account_id) else {},
+        "groups": [],
+    }
+    dialogs: list[dict] = []
+    if tg.is_connected(account_id):
+        try:
+            dialogs = await tg.list_dialogs(account_id)
+        except Exception as exc:
+            info["dialogs_error"] = str(exc)
+    dialog_ids = {d["id"] for d in dialogs}
+    info["dialog_count"] = len(dialogs)
+
+    for group in db.query(models.Group).filter(models.Group.account_id == account_id).all():
+        is_member = group.telegram_id in dialog_ids
+        entry = {
+            "id": group.id,
+            "telegram_id": group.telegram_id,
+            "title": group.title,
+            "mode": group.mode,
+            "active": group.active,
+            "is_member": is_member,
+        }
+        if tg.is_connected(account_id) and not is_member:
+            accessible, reason = await tg.can_access_group(account_id, group.telegram_id)
+            entry["accessible"] = accessible
+            entry["access_error"] = reason
+        info["groups"].append(entry)
+    return info

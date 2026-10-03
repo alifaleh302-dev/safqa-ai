@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..db import get_db
 from ..services import telegram_manager as tg
+from ..services.telegram_manager import log_warning
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -14,13 +15,26 @@ def list_groups(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.GroupOut, status_code=201)
-def create_group(payload: schemas.GroupCreate, db: Session = Depends(get_db)):
+async def create_group(payload: schemas.GroupCreate, db: Session = Depends(get_db)):
     if db.query(models.Group).filter(models.Group.telegram_id == payload.telegram_id).first():
         raise HTTPException(409, "Group with this Telegram id already exists")
     group = models.Group(**payload.model_dump())
     db.add(group)
     db.commit()
     db.refresh(group)
+
+    # Warn (without blocking) if the bound account cannot reach the group: the
+    # userbot will otherwise stay silent forever with no visible error.
+    if group.account_id and tg.is_connected(group.account_id):
+        accessible, reason = await tg.can_access_group(group.account_id, group.telegram_id)
+        if accessible:
+            title = await tg.resolve_group(group.account_id, group.telegram_id)
+            if title:
+                group.title = title
+                db.commit()
+                db.refresh(group)
+        else:
+            log_warning(f"Group {group.telegram_id} added but the bound account cannot access it: {reason}")
     return group
 
 

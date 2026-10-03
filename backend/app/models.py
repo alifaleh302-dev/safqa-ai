@@ -55,6 +55,9 @@ class Group(Base):
     account_id: Mapped[Optional[int]] = mapped_column(ForeignKey("accounts.id"), default=None)
     prompt_id: Mapped[Optional[int]] = mapped_column(ForeignKey("prompts.id"), default=None)
     mode: Mapped[str] = mapped_column(String(32), default="mention")  # mention | always | off
+    # "relevant": only answer messages about our offer; "all": answer anything
+    # addressed to us. Kept separate from `mode` (which decides *when* to look).
+    reply_scope: Mapped[str] = mapped_column(String(16), default="relevant")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
