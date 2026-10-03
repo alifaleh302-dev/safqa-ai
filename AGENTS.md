@@ -52,6 +52,9 @@ npm run build                                # للتحقق من أخطاء Type
 - كل مسارات `/api` محميّة بـ JWT عدا `/api/health` و`/api/auth/login`؛ بثّ WebSocket يُصادَق عبر `?token=`.
 
 ## قواعد مهمة للمستقبل
+- **المستودع:** https://github.com/alifaleh302-dev/safqa-ai (عام) — الفرع `master`، والـ remote `origin`.
+- **الترحيل السحابي:** ضع `DATABASE_URL` في `.env`؛ الكود يطبّع `postgres://` و`postgresql://`
+  إلى `postgresql+psycopg2://` تلقائياً، و`init_db()` ينشئ الجداول عند الإقلاع (لا migrations يدوية).
 - **لا تُرسل رسائل جماعية** ولا ترفع الحدود دون سبب — خطر حظر الحساب.
 - الوضع الافتراضي الآمن للمجموعات هو `mention`.
 - `mode` يحدّد *متى* ينظر البوت (mention/always/off)، و`reply_scope` يحدّد *هل* يردّ:
