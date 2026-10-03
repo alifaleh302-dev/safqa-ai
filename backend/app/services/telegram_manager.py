@@ -24,6 +24,11 @@ _supervisors: dict[int, asyncio.Task] = {}
 # Simple in-memory anti-spam counters keyed by account id.
 _reply_log: dict[int, list[datetime]] = defaultdict(list)
 
+# One lock per (group, person). The daily-cap check and the reply reservation
+# must be a single atomic step; otherwise two messages arriving back-to-back
+# both pass the check and the person gets more replies than the cap allows.
+_user_locks: dict[tuple[int, int], asyncio.Lock] = {}
+
 # Sign-in flows in progress, keyed by account id.
 _pending: dict[int, dict] = {}
 
@@ -274,31 +279,58 @@ def _record_reply(account_id: int) -> None:
     _reply_log[account_id].append(datetime.now(timezone.utc))
 
 
-def _check_user_limit(group_id: int, sender_id: int, limit: int) -> bool:
-    """True if we may still reply to this person.
+def _user_lock(group_id: int, sender_id: int) -> asyncio.Lock:
+    key = (group_id, sender_id)
+    lock = _user_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_locks[key] = lock
+    return lock
 
-    Counts inbound messages from the same Telegram user in this group that we
-    already answered within the last 24h. Capping this prevents us from looking
-    like an eager bot that answers every single line, and keeps the account safe
-    from spam reports.
+
+async def _reserve_user_slot(group_id: int, sender_id: int, message_id: int, limit: int) -> bool:
+    """Atomically check the daily cap and reserve a reply slot for this person.
+
+    Returns True when a slot was free (and books it immediately) so that two
+    messages arriving back-to-back cannot both slip past the cap. The slot is
+    written as a ``reply`` decision for the inbound message, which is exactly
+    what the counter counts — keeping the check and the record in one place.
+
+    ``limit <= 0`` means unlimited. A missing sender id is never counted (we
+    cannot attribute the message), so those replies are always allowed.
     """
     if limit <= 0 or not sender_id:
         return True
-    since = datetime.now(timezone.utc) - timedelta(days=1)
-    with SessionLocal() as db:
-        answered = (
-            db.query(models.Message.id)
-            .join(models.Decision, models.Decision.message_id == models.Message.id)
-            .filter(
-                models.Message.group_id == group_id,
-                models.Message.sender_id == sender_id,
-                models.Message.direction == "in",
-                models.Decision.action == "reply",
-                models.Message.created_at >= since,
+    async with _user_lock(group_id, sender_id):
+        since = datetime.now(timezone.utc) - timedelta(days=1)
+        with SessionLocal() as db:
+            answered = (
+                db.query(models.Message.id)
+                .join(models.Decision, models.Decision.message_id == models.Message.id)
+                .filter(
+                    models.Message.group_id == group_id,
+                    models.Message.sender_id == sender_id,
+                    models.Message.direction == "in",
+                    models.Decision.action == "reply",
+                    models.Message.created_at >= since,
+                )
+                .count()
             )
-            .count()
-        )
-    return answered < limit
+            if answered >= limit:
+                return False
+            # Reserve the slot now, before the (slow) model call, so concurrent
+            # messages for the same person see this reply and stay capped.
+            db.add(
+                models.Decision(
+                    group_id=group_id,
+                    message_id=message_id,
+                    action="reply",
+                    reply_text="",
+                    reason="reserved slot (awaiting model)",
+                )
+            )
+            db.commit()
+        return True
 
 
 async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> None:
@@ -387,7 +419,7 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
             _log_event("warning", "guard", "Reply skipped: hourly/daily rate limit reached")
             return
 
-        if not _check_user_limit(group_id, sender_id, per_user_limit):
+        if not await _reserve_user_slot(group_id, sender_id, inbound_id, per_user_limit):
             _log_decision(
                 group_id,
                 inbound_id,
@@ -411,11 +443,11 @@ async def _handle_incoming(account_id: int, event: events.NewMessage.Event) -> N
                 reply_scope=reply_scope,
             )
         except GeminiError as exc:
-            _log_decision(group_id, inbound_id, "escalate", "", f"AI error: {exc}")
+            _update_decision(group_id, inbound_id, "escalate", "", f"AI error: {exc}")
             _log_event("error", "ai", str(exc))
             return
 
-        _log_decision(group_id, inbound_id, decision.action, decision.reply, decision.reason)
+        _update_decision(group_id, inbound_id, decision.action, decision.reply, decision.reason)
 
         if decision.action != "reply" or not decision.reply:
             return
@@ -525,6 +557,40 @@ def _log_decision(group_id: int, message_id: Optional[int], action: str, reply: 
             reason=reason,
         )
         db.add(decision)
+        db.commit()
+        db.refresh(decision)
+        payload = {
+            "id": decision.id,
+            "group_id": decision.group_id,
+            "action": decision.action,
+            "reply_text": decision.reply_text,
+            "reason": decision.reason,
+            "created_at": decision.created_at.isoformat(),
+        }
+    ws_publish("decision", payload)
+
+
+def _update_decision(group_id: int, message_id: int, action: str, reply: str, reason: str) -> None:
+    """Finalise the decision row reserved for an inbound message.
+
+    ``_reserve_user_slot`` books a placeholder ``reply`` decision so the daily
+    cap holds under concurrency; here we replace it with the model's real
+    verdict. If no row exists (uncapped person), one is inserted so the audit
+    trail stays complete.
+    """
+    with SessionLocal() as db:
+        decision = (
+            db.query(models.Decision)
+            .filter(models.Decision.message_id == message_id)
+            .order_by(models.Decision.id.desc())
+            .first()
+        )
+        if decision is None:
+            decision = models.Decision(group_id=group_id, message_id=message_id, action=action)
+            db.add(decision)
+        decision.action = action
+        decision.reply_text = reply
+        decision.reason = reason
         db.commit()
         db.refresh(decision)
         payload = {
