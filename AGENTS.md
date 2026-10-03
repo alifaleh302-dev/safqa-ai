@@ -109,3 +109,14 @@ v3 صنعانية+تنويع 8.69 | v4 +فلتر طلب 8.73 | v5 +أمثلة ا
 - صحّحنا لوحة التقييم لتفصل action_acc عن محاور جودة الردّ حتى لا يُعاقب السكوت الصحيح.
 
 البرومبت الفائز (v5) مطبَّق على البرومبت النشط في قاعدة البيانات باسم «مفاوض يمني - v5».
+
+
+## النشر على Railway (درس مهم)
+كان الخطأ `Railpack could not determine how to build the app` لأن الخدمة تُبنى من جذر
+المستودع بلا Dockerfile، فيسقط Railway على `railpack`. الحل المعتمد الآن:
+- `railway.json` في الجذر يحدّد `builder=DOCKERFILE` و`dockerfilePath=backend/Dockerfile.single`.
+- `backend/Dockerfile.single`: صورة متعددة المراحل تبني React ثم يخدمها FastAPI من نفس
+  الأصل (لا CORS ولا ربط خدمتين). `main.py` يعمل mount للـ SPA على `/` بعد كل مسارات `/api`.
+- يجب أن يكون Root Directory للخدمة فارغاً (الجذر)، لا backend ولا frontend.
+- بديل بسياق مختلف: خدمتان، backend/railway.json و frontend/railway.json مع nginx.
+- `.dockerignore` في الجذر يستبعد node_modules/dist/.env/.git/eval حتى لا تتلوّث الصورة.
